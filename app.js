@@ -12,7 +12,7 @@ const tokenAddresses = {
 };
 const decimals = 18;
 const NEXUS_TESTNET = {
-  chainId: "0xF69",
+  chainId: "0xf69",
   chainName: "Nexus Testnet",
   nativeCurrency: { name: "NEX", symbol: "NEX", decimals: 18 },
   rpcUrls: ["https://testnet.rpc.nexus.xyz"],
@@ -156,20 +156,38 @@ function reserveFor(symbol) {
 }
 
 async function connectWallet() {
+  const walletButton = $("#walletButton");
+  const walletLabel = $("#walletLabel");
+  if (walletButton) walletButton.disabled = true;
+  if (walletLabel) walletLabel.textContent = "Connecting";
+  showSafeStatus("Opening wallet...");
+
   if (!window.ethereum) {
     showSafeStatus("Wallet not found. Open this site in MetaMask, Rabby, Brave, or another injected wallet browser.");
+    if (walletButton) walletButton.disabled = false;
+    if (walletLabel) walletLabel.textContent = "Connect";
     return false;
   }
 
   try {
     const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
     state.connectedAddress = accounts[0] || "";
+    if (!state.connectedAddress) throw new Error("No wallet account returned.");
+    if (walletLabel) walletLabel.textContent = shortAddress(state.connectedAddress);
+    showSafeStatus("Switching to Nexus Testnet...");
     await switchToNexusTestnet();
-    if (state.connectedAddress) $("#walletLabel").textContent = shortAddress(state.connectedAddress);
-    await refreshOnchainBalances();
+    showSafeStatus("Wallet connected.");
+    try {
+      await refreshOnchainBalances();
+    } catch (balanceError) {
+      showSafeStatus("Wallet connected. Balance refresh failed.");
+    }
+    if (walletButton) walletButton.disabled = false;
     return Boolean(state.connectedAddress);
   } catch (error) {
     showSafeStatus(error?.message || "Wallet connection rejected.");
+    if (walletLabel) walletLabel.textContent = state.connectedAddress ? shortAddress(state.connectedAddress) : "Connect";
+    if (walletButton) walletButton.disabled = false;
     return false;
   }
 }
@@ -192,6 +210,8 @@ async function switchToNexusTestnet() {
 function showSafeStatus(message) {
   const target = $("#usdxClaimStatus");
   if (target) target.textContent = message;
+  const walletStatus = $("#walletStatus");
+  if (walletStatus) walletStatus.textContent = message;
 }
 
 function setupTokens() {
@@ -639,6 +659,24 @@ function initDex() {
   $("#createPositionButton")?.addEventListener("click", focusCreatePosition);
   $("#usdxFaucetButton")?.addEventListener("click", claimUsdxFaucet);
   renderPoolTable();
+
+  if (window.ethereum) {
+    window.ethereum
+      .request({ method: "eth_accounts" })
+      .then(async (accounts) => {
+        state.connectedAddress = accounts?.[0] || "";
+        if (!state.connectedAddress) return;
+        $("#walletLabel").textContent = shortAddress(state.connectedAddress);
+        try {
+          await refreshOnchainBalances();
+        } catch (balanceError) {
+          showSafeStatus("Wallet connected. Balance refresh failed.");
+        }
+      })
+      .catch(() => {});
+  } else {
+    showSafeStatus("Wallet not detected in this browser.");
+  }
 }
 
 initDex();

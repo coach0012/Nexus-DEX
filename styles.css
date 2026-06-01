@@ -106,14 +106,6 @@ input {
   align-items: center;
   gap: 24px;
   padding: 18px 36px;
-  pointer-events: none;
-}
-
-.brand,
-.nav,
-.top-actions,
-.icon-button,
-.menu-button {
   pointer-events: auto;
 }
 
@@ -161,6 +153,8 @@ input {
   display: flex;
   align-items: center;
   gap: 12px;
+  position: relative;
+  z-index: 30;
 }
 
 .balance-pill,
@@ -191,6 +185,18 @@ input {
   align-items: center;
   gap: 10px;
   min-width: 148px;
+  cursor: pointer;
+}
+
+.wallet-status {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 68px;
+  max-width: 330px;
+  color: #8fb7ff;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
 }
 
 .wallet-dot {
