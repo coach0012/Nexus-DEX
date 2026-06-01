@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NEXUS DEX</title>
+    <meta name="description" content="NEXUS DEX aggregator with swaps and liquidity pools." />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="dex.html" aria-label="NEXUS DEX home">NEXUS</a>
+      <nav class="nav" aria-label="Main navigation">
+        <a class="active" href="#swap">Swap</a>
+        <a href="#liquidity">Pools</a>
+        <a href="#faucet">Faucet</a>
+      </nav>
+      <div class="top-actions">
+        <div class="balance-pill" id="walletBalance" hidden>0 NEX</div>
+        <button class="icon-button" id="walletButton" type="button">
+          <span class="wallet-dot"></span>
+          <span id="walletLabel">Connect</span>
+        </button>
+        <button class="menu-button" type="button" aria-label="Menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="dex-stage">
+      <div class="blue-floor" aria-hidden="true"></div>
+
+      <section class="swap-zone" id="swap">
+        <div class="swap-titlebar">
+          <span>Swap</span>
+          <div>
+            <button class="icon-only" id="refreshQuote" type="button" aria-label="Refresh quote">&#8635;</button>
+            <button class="icon-only" type="button" aria-label="Settings">&#9881;</button>
+          </div>
+        </div>
+
+        <section class="swap-card" aria-label="Token swap">
+          <label class="swap-panel">
+            <span>You pay</span>
+            <small id="payBalance">0 NEX</small>
+            <div class="swap-panel-main">
+              <select id="sellToken" aria-label="Sell token"></select>
+              <input id="sellAmount" type="number" min="0" step="0.0001" value="" placeholder="0.00" />
+            </div>
+            <em id="payUsd">$0</em>
+          </label>
+
+          <button class="switch-button" id="switchTokens" type="button" aria-label="Switch tokens">&#8645;</button>
+
+          <label class="swap-panel">
+            <span>You receive</span>
+            <small id="receiveBalance">0 USDX</small>
+            <div class="swap-panel-main">
+              <select id="buyToken" aria-label="Buy token"></select>
+              <input id="buyAmount" type="text" readonly placeholder="0.00" />
+            </div>
+            <em id="receiveUsd">$0</em>
+          </label>
+        </section>
+
+        <div class="swap-settings">
+          <label>
+            Slippage
+            <select id="slippageInput">
+              <option value="0.1">0.1%</option>
+              <option value="0.5" selected>0.5%</option>
+              <option value="1">1%</option>
+            </select>
+          </label>
+          <label>
+            Deadline
+            <select id="deadlineInput">
+              <option value="5">5m</option>
+              <option value="10" selected>10m</option>
+              <option value="30">30m</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="quote-box" id="quoteBox" aria-live="polite"></div>
+        <button class="swap-submit" id="swapButton" type="button">Enter amount</button>
+
+        <nav class="mode-tabs" aria-label="DEX modes">
+          <a class="active" href="#swap">Swap</a>
+          <a href="#faucet">Faucet</a>
+          <a href="#liquidity">Pools</a>
+        </nav>
+      </section>
+
+      <section class="info-grid">
+        <aside class="glass-panel" id="faucet">
+          <p class="eyebrow">Faucet</p>
+          <div class="market-panel">
+            <div><span>Network</span><strong>Nexus Testnet</strong></div>
+            <div><span>USDX claim</span><strong id="usdxClaimStatus">10 USDX</strong></div>
+            <div><span>NEX gas</span><strong>Official faucet</strong></div>
+          </div>
+          <div class="faucet-actions">
+            <button id="usdxFaucetButton" type="button">Get 10 USDX</button>
+            <a class="faucet-link" href="https://faucet.nexus.xyz" target="_blank" rel="noreferrer">Get NEX</a>
+          </div>
+          <p class="security-note">Test wallets only. Faucet is rate-limited locally and ready for your deployed USDX faucet contract.</p>
+        </aside>
+
+        <section class="glass-panel quick-pool">
+          <p class="eyebrow">Quick LP</p>
+          <h2>Add liquidity</h2>
+          <div class="pool-grid">
+            <label>
+              Token A
+              <div>
+                <input id="poolAmountA" type="number" min="0" step="0.0001" placeholder="0.00" />
+                <select id="poolTokenA" aria-label="Pool token A"></select>
+              </div>
+            </label>
+            <label>
+              Token B
+              <div>
+                <input id="poolAmountB" type="number" min="0" step="0.0001" placeholder="0.00" />
+                <select id="poolTokenB" aria-label="Pool token B"></select>
+              </div>
+            </label>
+          </div>
+          <button id="addLiquidityButton" type="button">Add liquidity</button>
+          <div class="pool-stats">
+            <div><span>Pool value</span><strong id="poolValue">$0</strong></div>
+            <div><span>Positions</span><strong id="poolCount">0</strong></div>
+            <div><span>USDX balance</span><strong id="usdxBalance">0</strong></div>
+          </div>
+          <div class="pool-list" id="poolList"></div>
+        </section>
+
+        <aside class="glass-panel">
+          <p class="eyebrow">Recent</p>
+          <div id="swapLog"></div>
+        </aside>
+      </section>
+
+      <section class="liquidity-page" id="liquidity">
+        <div class="liquidity-head">
+          <h1>Liquidity Pools</h1>
+          <div class="pool-tools">
+            <div class="pool-tabs">
+              <button class="active" type="button">All Pools</button>
+              <button type="button">My Pools</button>
+            </div>
+            <label class="pool-search">
+              <span>Search</span>
+              <input id="poolSearch" type="search" placeholder="Search" />
+            </label>
+            <button class="create-position" id="createPositionButton" type="button">+ Create Position</button>
+          </div>
+        </div>
+
+        <div class="pool-table" aria-label="Liquidity pool table">
+          <div class="pool-row pool-row-head">
+            <span>Pair</span>
+            <span>Avg APR</span>
+            <span>TVL</span>
+            <span>Volume 24h</span>
+            <span>Fees 24h</span>
+            <span></span>
+          </div>
+          <div id="poolTableBody"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
