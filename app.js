@@ -2,8 +2,8 @@ const swapKey = "nexusdex.swaps.v1";
 const poolKey = "nexusdex.pools.v1";
 const balancesKey = "nexusdex.balances.v1";
 const faucetKey = "nexusdex.faucet.v1";
-const routerAddress = "";
-const usdxFaucetAddress = "";
+const routerAddress = "0x28464af7B8db8D4C934FF269244Db76a2c6f75B5";
+const usdxFaucetAddress = "0x279D60ad50FF69e6926089B023c4f4460542af94";
 const NEXUS_TESTNET = {
   chainId: "0xF69",
   chainName: "Nexus Testnet",
