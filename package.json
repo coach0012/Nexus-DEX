@@ -4,8 +4,9 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "compile": "hardhat compile",
-    "deploy:testnet": "hardhat run scripts/deploy.js --network nexusTestnet"
+    "compile": "set APPDATA=.hardhat-appdata&& set LOCALAPPDATA=.hardhat-localappdata&& hardhat --config hardhat.config.js compile",
+    "deploy:testnet": "node scripts/deploy-direct.cjs",
+    "deploy:hardhat": "set APPDATA=.hardhat-appdata&& set LOCALAPPDATA=.hardhat-localappdata&& hardhat --config hardhat.config.js run scripts/deploy.js --network nexus"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

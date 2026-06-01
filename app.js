@@ -1,9 +1,16 @@
-const swapKey = "nexusdex.swaps.v1";
-const poolKey = "nexusdex.pools.v1";
-const balancesKey = "nexusdex.balances.v1";
+const swapKey = "nexusdex.live.swaps.v1";
+const poolKey = "nexusdex.live.pools.v1";
+const balancesKey = "nexusdex.live.balances.v1";
 const faucetKey = "nexusdex.faucet.v1";
 const routerAddress = "0x28464af7B8db8D4C934FF269244Db76a2c6f75B5";
 const usdxFaucetAddress = "0x279D60ad50FF69e6926089B023c4f4460542af94";
+const tokenAddresses = {
+  NEX: "",
+  USDX: usdxFaucetAddress,
+  WETH: "",
+  USDC: "",
+};
+const decimals = 18;
 const NEXUS_TESTNET = {
   chainId: "0xF69",
   chainName: "Nexus Testnet",
@@ -29,7 +36,7 @@ const sources = [
 const state = {
   swaps: loadArray(swapKey, []),
   pools: loadArray(poolKey, []),
-  balances: loadObject(balancesKey, { NEX: 0.173, USDX: 0, WETH: 0.005, USDC: 0 }),
+  balances: { NEX: 0, USDX: 0, WETH: 0, USDC: 0 },
   connectedAddress: "",
   connectedChain: "",
   lastQuote: null,
@@ -134,7 +141,7 @@ function tokenBySymbol(symbol) {
 }
 
 function shortAddress(address) {
-  if (!address || address.length < 12) return "demo-wallet";
+  if (!address || address.length < 12) return "Connect";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
@@ -150,7 +157,7 @@ function reserveFor(symbol) {
 
 async function connectWallet() {
   if (!window.ethereum) {
-    showSafeStatus("Wallet not found. Use a wallet browser.");
+    showSafeStatus("Wallet not found. Open this site in MetaMask, Rabby, Brave, or another injected wallet browser.");
     return false;
   }
 
@@ -159,10 +166,10 @@ async function connectWallet() {
     state.connectedAddress = accounts[0] || "";
     await switchToNexusTestnet();
     if (state.connectedAddress) $("#walletLabel").textContent = shortAddress(state.connectedAddress);
-    updateBalances();
+    await refreshOnchainBalances();
     return Boolean(state.connectedAddress);
   } catch (error) {
-    showSafeStatus("Wallet connection rejected.");
+    showSafeStatus(error?.message || "Wallet connection rejected.");
     return false;
   }
 }
@@ -275,20 +282,149 @@ function formatNumber(value) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
 
+function strip0x(value) {
+  return String(value || "").replace(/^0x/i, "");
+}
+
+function word(value) {
+  return strip0x(value).padStart(64, "0");
+}
+
+function addressWord(address) {
+  return word(address);
+}
+
+function uintWord(value) {
+  return BigInt(value).toString(16).padStart(64, "0");
+}
+
+function parseUnits(value) {
+  const raw = String(value || "0").trim();
+  if (!raw || Number(raw) <= 0) return 0n;
+  const [whole, fraction = ""] = raw.split(".");
+  const cleanWhole = whole.replace(/\D/g, "") || "0";
+  const cleanFraction = fraction.replace(/\D/g, "").slice(0, decimals).padEnd(decimals, "0");
+  return BigInt(cleanWhole + cleanFraction);
+}
+
+function unitsFromNumber(value) {
+  return parseUnits(Number(value || 0).toFixed(decimals));
+}
+
+function formatUnits(value) {
+  const amount = BigInt(value || 0);
+  const base = 10n ** BigInt(decimals);
+  const whole = amount / base;
+  const fraction = (amount % base).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return Number(`${whole}.${fraction || "0"}`);
+}
+
+function tokenAddress(symbol) {
+  return tokenAddresses[symbol] || "";
+}
+
+function requireLiveToken(symbol) {
+  const address = tokenAddress(symbol);
+  if (!address) showSafeStatus(`${symbol} needs an ERC-20 contract address before live testing.`);
+  return address;
+}
+
+async function readNativeBalance() {
+  const hex = await window.ethereum.request({
+    method: "eth_getBalance",
+    params: [state.connectedAddress, "latest"],
+  });
+  state.balances.NEX = formatUnits(BigInt(hex || "0x0"));
+}
+
+async function readTokenBalance(symbol) {
+  const address = tokenAddress(symbol);
+  if (!address) {
+    state.balances[symbol] = 0;
+    return;
+  }
+  const data = `0x70a08231${addressWord(state.connectedAddress)}`;
+  const hex = await window.ethereum.request({
+    method: "eth_call",
+    params: [{ to: address, data }, "latest"],
+  });
+  state.balances[symbol] = formatUnits(BigInt(hex || "0x0"));
+}
+
+async function refreshOnchainBalances() {
+  if (!window.ethereum || !state.connectedAddress) return;
+  await readNativeBalance();
+  await Promise.all(["USDX", "WETH", "USDC"].map(readTokenBalance));
+  saveBalances();
+  updateBalances();
+}
+
+async function sendApproval(token, amount) {
+  const data = `0x095ea7b3${addressWord(routerAddress)}${uintWord(amount)}`;
+  return window.ethereum.request({
+    method: "eth_sendTransaction",
+    params: [{ from: state.connectedAddress, to: token, data }],
+  });
+}
+
+function buildSwapData(amountIn, amountOutMin, tokenIn, tokenOut) {
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+  return [
+    "0x38ed1739",
+    uintWord(amountIn),
+    uintWord(amountOutMin),
+    uintWord(160n),
+    addressWord(state.connectedAddress),
+    uintWord(deadline),
+    uintWord(2n),
+    addressWord(tokenIn),
+    addressWord(tokenOut),
+  ].join("");
+}
+
+function buildAddLiquidityData(tokenA, tokenB, amountA, amountB) {
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+  const minA = (amountA * 99n) / 100n;
+  const minB = (amountB * 99n) / 100n;
+  return [
+    "0xe8e33700",
+    addressWord(tokenA),
+    addressWord(tokenB),
+    uintWord(amountA),
+    uintWord(amountB),
+    uintWord(minA),
+    uintWord(minB),
+    addressWord(state.connectedAddress),
+    uintWord(deadline),
+  ].join("");
+}
+
 async function executeSwap() {
   const quote = quoteSwap();
   if (!quote) return;
   if (!state.connectedAddress && !(await connectWallet())) return;
-  if ((state.balances[quote.from.symbol] || 0) < quote.amountIn) {
-    showSafeStatus(`Need more ${quote.from.symbol}.`);
+  const tokenIn = requireLiveToken(quote.from.symbol);
+  const tokenOut = requireLiveToken(quote.to.symbol);
+  if (!tokenIn || !tokenOut) return;
+  if (!routerAddress) {
+    showSafeStatus("Router address missing.");
     return;
   }
-  if (routerAddress && window.ethereum) return;
 
-  // Demo safety: without a reviewed router address, only local balances change.
-  state.balances[quote.from.symbol] = Math.max(0, (state.balances[quote.from.symbol] || 0) - quote.amountIn);
-  state.balances[quote.to.symbol] = (state.balances[quote.to.symbol] || 0) + quote.amountOut;
-  saveBalances();
+  const amountIn = parseUnits($("#sellAmount").value);
+  const minOut = unitsFromNumber(quote.amountOut * (1 - Number($("#slippageInput").value) / 100));
+  if (amountIn <= 0n || minOut <= 0n) {
+    showSafeStatus("Enter a valid amount.");
+    return;
+  }
+
+  $("#swapButton").textContent = "Approve token";
+  await sendApproval(tokenIn, amountIn);
+  $("#swapButton").textContent = "Confirm swap";
+  const txHash = await window.ethereum.request({
+    method: "eth_sendTransaction",
+    params: [{ from: state.connectedAddress, to: routerAddress, data: buildSwapData(amountIn, minOut, tokenIn, tokenOut) }],
+  });
   state.swaps.unshift({
     id: crypto.randomUUID(),
     from: quote.from.symbol,
@@ -296,14 +432,15 @@ async function executeSwap() {
     amountIn: quote.amountIn,
     amountOut: quote.amountOut,
     route: quote.routeMode,
-    account: state.connectedAddress || "demo-wallet",
+    account: state.connectedAddress,
+    txHash,
     time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   });
   state.swaps = state.swaps.slice(0, 7);
   saveSwaps();
   renderSwapLog();
-  updateBalances();
-  $("#swapButton").textContent = "Route simulated";
+  await refreshOnchainBalances();
+  $("#swapButton").textContent = "Swap sent";
   window.setTimeout(() => {
     $("#swapButton").textContent = "Review route";
   }, 1200);
@@ -320,14 +457,14 @@ function renderSwapLog() {
       (swap) => `
         <div class="swap-entry">
           <strong>${formatNumber(swap.amountIn)} ${swap.from} -> ${formatNumber(swap.amountOut)} ${swap.to}</strong>
-          <span>${swap.route || "Aggregator"} - ${swap.time}</span>
+          <span>${swap.txHash ? shortAddress(swap.txHash) : swap.route || "Aggregator"} - ${swap.time}</span>
         </div>
       `,
     )
     .join("");
 }
 
-function addLiquidity() {
+async function addLiquidity() {
   const amountA = Number($("#poolAmountA").value);
   const amountB = Number($("#poolAmountB").value);
   const tokenA = $("#poolTokenA").value;
@@ -336,31 +473,40 @@ function addLiquidity() {
     showSafeStatus("Enter two token amounts.");
     return;
   }
-  if (!state.connectedAddress) {
-    connectWallet();
-    return;
-  }
-  if ((state.balances[tokenA] || 0) < amountA || (state.balances[tokenB] || 0) < amountB) {
-    showSafeStatus("Not enough demo balance.");
+  if (!state.connectedAddress && !(await connectWallet())) return;
+  const addressA = requireLiveToken(tokenA);
+  const addressB = requireLiveToken(tokenB);
+  if (!addressA || !addressB) return;
+  if (!routerAddress) {
+    showSafeStatus("Router address missing.");
     return;
   }
 
-  state.balances[tokenA] -= amountA;
-  state.balances[tokenB] -= amountB;
-  saveBalances();
+  const amountAWei = parseUnits($("#poolAmountA").value);
+  const amountBWei = parseUnits($("#poolAmountB").value);
+  showSafeStatus(`Approve ${tokenA}`);
+  await sendApproval(addressA, amountAWei);
+  showSafeStatus(`Approve ${tokenB}`);
+  await sendApproval(addressB, amountBWei);
+  showSafeStatus("Confirm liquidity");
+  const txHash = await window.ethereum.request({
+    method: "eth_sendTransaction",
+    params: [{ from: state.connectedAddress, to: routerAddress, data: buildAddLiquidityData(addressA, addressB, amountAWei, amountBWei) }],
+  });
   state.pools.unshift({
     id: crypto.randomUUID(),
     tokenA,
     tokenB,
     amountA,
     amountB,
+    txHash,
     time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   });
   state.pools = state.pools.slice(0, 7);
   savePools();
   renderPools();
   quoteSwap();
-  updateBalances();
+  await refreshOnchainBalances();
   $("#poolAmountA").value = "";
   $("#poolAmountB").value = "";
 }
@@ -368,7 +514,7 @@ function addLiquidity() {
 function renderPools() {
   const poolList = $("#poolList");
   if (!state.pools.length) {
-    poolList.innerHTML = `<div class="pool-item"><span>No liquidity yet.</span><span>Demo pool</span></div>`;
+    poolList.innerHTML = `<div class="pool-item"><span>No liquidity yet.</span><span>Live positions</span></div>`;
     updatePoolStats();
     return;
   }
@@ -378,7 +524,7 @@ function renderPools() {
       (pool) => `
         <div class="pool-item">
           <span>${formatNumber(pool.amountA)} ${pool.tokenA} / ${formatNumber(pool.amountB)} ${pool.tokenB}</span>
-          <span>${pool.time}</span>
+          <span>${pool.txHash ? shortAddress(pool.txHash) : pool.time}</span>
         </div>
       `,
     )
@@ -410,18 +556,14 @@ async function claimUsdxFaucet() {
   }
 
   if (usdxFaucetAddress && window.ethereum) {
-    // claim() selector. Configure only after deploying and verifying the USDX faucet contract.
     await window.ethereum.request({
       method: "eth_sendTransaction",
       params: [{ from: state.connectedAddress, to: usdxFaucetAddress, data: "0x4e71d92d" }],
     });
-  } else {
-    state.balances.USDX = (state.balances.USDX || 0) + 10;
-    saveBalances();
   }
 
   localStorage.setItem(faucetKey, String(now));
-  updateBalances();
+  await refreshOnchainBalances();
   showSafeStatus("Claimed 10 USDX");
 }
 

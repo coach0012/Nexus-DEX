@@ -15,7 +15,12 @@ module.exports = {
     }
   },
   networks: {
-    nexusTestnet: {
+    nexus: {
+      url: "https://testnet.rpc.nexus.xyz",
+      chainId: 3945,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
+    },
+    nexustestnet: {
       url: "https://testnet.rpc.nexus.xyz",
       chainId: 3945,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
