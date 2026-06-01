@@ -41,6 +41,16 @@ const state = {
   connectedChain: "",
   lastQuote: null,
 };
+const walletProviders = new Map();
+let selectedProvider = null;
+
+window.addEventListener("eip6963:announceProvider", (event) => {
+  const detail = event.detail || {};
+  if (!detail.provider) return;
+  const info = detail.info || {};
+  addWalletProvider(info.rdns || info.uuid || info.name || crypto.randomUUID(), info.name || "Wallet", detail.provider, info.icon || "");
+  renderWalletList();
+});
 
 const marketPools = [
   {
@@ -155,22 +165,111 @@ function reserveFor(symbol) {
   return base + added;
 }
 
-async function connectWallet() {
+function activeProvider() {
+  return selectedProvider || window.ethereum || null;
+}
+
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, (char) => {
+    const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    return entities[char];
+  });
+}
+
+function detectProviderName(provider) {
+  if (provider?.isRabby) return "Rabby";
+  if (provider?.isMetaMask) return "MetaMask";
+  if (provider?.isBraveWallet) return "Brave Wallet";
+  if (provider?.isCoinbaseWallet) return "Coinbase Wallet";
+  if (provider?.isOKXWallet || provider?.okxwallet) return "OKX Wallet";
+  if (provider?.isTrust) return "Trust Wallet";
+  return "Injected Wallet";
+}
+
+function addWalletProvider(id, name, provider, icon = "") {
+  if (!provider?.request) return;
+  const duplicate = Array.from(walletProviders.values()).some((wallet) => wallet.provider === provider);
+  if (duplicate) return;
+  const safeId = `wallet-${walletProviders.size}`;
+  walletProviders.set(safeId, { id: safeId, name: name || "Wallet", provider, icon });
+}
+
+function collectInjectedWallets() {
+  if (!window.ethereum) return;
+  const providers = Array.isArray(window.ethereum.providers) ? window.ethereum.providers : [window.ethereum];
+  providers.forEach((provider, index) => {
+    const name = detectProviderName(provider);
+    addWalletProvider(`${name}-${index}`, name, provider);
+  });
+}
+
+function requestWalletAnnouncements() {
+  collectInjectedWallets();
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+
+function renderWalletList() {
+  const walletList = $("#walletList");
+  if (!walletList) return;
+  const wallets = Array.from(walletProviders.values());
+  if (!wallets.length) {
+    walletList.innerHTML = `<div class="wallet-help">No wallet extension detected in this browser.</div>`;
+    return;
+  }
+  walletList.innerHTML = wallets
+    .map(
+      (wallet) => `
+        <button class="wallet-option" type="button" data-wallet-id="${wallet.id}">
+          ${
+            wallet.icon
+              ? `<img src="${escapeHtml(wallet.icon)}" alt="" />`
+              : `<span class="wallet-option-icon">${escapeHtml(wallet.name.slice(0, 1))}</span>`
+          }
+          <span>${escapeHtml(wallet.name)}<small>Connect to Nexus Testnet</small></span>
+        </button>
+      `,
+    )
+    .join("");
+  walletList.querySelectorAll(".wallet-option").forEach((button) => {
+    button.addEventListener("click", () => {
+      const wallet = walletProviders.get(button.dataset.walletId);
+      if (!wallet) return;
+      selectedProvider = wallet.provider;
+      closeWalletModal();
+      connectWallet(wallet.provider, wallet.name);
+    });
+  });
+}
+
+function openWalletModal() {
+  requestWalletAnnouncements();
+  renderWalletList();
+  const modal = $("#walletModal");
+  if (modal) modal.hidden = false;
+  window.setTimeout(renderWalletList, 250);
+}
+
+function closeWalletModal() {
+  const modal = $("#walletModal");
+  if (modal) modal.hidden = true;
+}
+
+async function connectWallet(provider = activeProvider(), walletName = "") {
   const walletButton = $("#walletButton");
   const walletLabel = $("#walletLabel");
-  if (walletButton) walletButton.disabled = true;
-  if (walletLabel) walletLabel.textContent = "Connecting";
-  showSafeStatus("Opening wallet...");
-
-  if (!window.ethereum) {
-    showSafeStatus("Wallet not found. Open this site in MetaMask, Rabby, Brave, or another injected wallet browser.");
-    if (walletButton) walletButton.disabled = false;
-    if (walletLabel) walletLabel.textContent = "Connect";
+  if (!provider) {
+    openWalletModal();
+    showSafeStatus("Choose a wallet to connect.");
     return false;
   }
 
+  if (walletButton) walletButton.disabled = true;
+  if (walletLabel) walletLabel.textContent = "Connecting";
+  showSafeStatus(walletName ? `Opening ${walletName}...` : "Opening wallet...");
+
   try {
-    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    selectedProvider = provider;
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
     state.connectedAddress = accounts[0] || "";
     if (!state.connectedAddress) throw new Error("No wallet account returned.");
     if (walletLabel) walletLabel.textContent = shortAddress(state.connectedAddress);
@@ -193,12 +292,13 @@ async function connectWallet() {
 }
 
 async function switchToNexusTestnet() {
-  if (!window.ethereum) return false;
+  const provider = activeProvider();
+  if (!provider) return false;
   try {
-    await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: NEXUS_TESTNET.chainId }] });
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: NEXUS_TESTNET.chainId }] });
   } catch (error) {
     if (error?.code === 4902) {
-      await window.ethereum.request({ method: "wallet_addEthereumChain", params: [NEXUS_TESTNET] });
+      await provider.request({ method: "wallet_addEthereumChain", params: [NEXUS_TESTNET] });
     } else {
       throw error;
     }
@@ -350,7 +450,9 @@ function requireLiveToken(symbol) {
 }
 
 async function readNativeBalance() {
-  const hex = await window.ethereum.request({
+  const provider = activeProvider();
+  if (!provider) return;
+  const hex = await provider.request({
     method: "eth_getBalance",
     params: [state.connectedAddress, "latest"],
   });
@@ -358,13 +460,15 @@ async function readNativeBalance() {
 }
 
 async function readTokenBalance(symbol) {
+  const provider = activeProvider();
+  if (!provider) return;
   const address = tokenAddress(symbol);
   if (!address) {
     state.balances[symbol] = 0;
     return;
   }
   const data = `0x70a08231${addressWord(state.connectedAddress)}`;
-  const hex = await window.ethereum.request({
+  const hex = await provider.request({
     method: "eth_call",
     params: [{ to: address, data }, "latest"],
   });
@@ -372,7 +476,7 @@ async function readTokenBalance(symbol) {
 }
 
 async function refreshOnchainBalances() {
-  if (!window.ethereum || !state.connectedAddress) return;
+  if (!activeProvider() || !state.connectedAddress) return;
   await readNativeBalance();
   await Promise.all(["USDX", "WETH", "USDC"].map(readTokenBalance));
   saveBalances();
@@ -380,8 +484,10 @@ async function refreshOnchainBalances() {
 }
 
 async function sendApproval(token, amount) {
+  const provider = activeProvider();
+  if (!provider) throw new Error("Wallet not connected.");
   const data = `0x095ea7b3${addressWord(routerAddress)}${uintWord(amount)}`;
-  return window.ethereum.request({
+  return provider.request({
     method: "eth_sendTransaction",
     params: [{ from: state.connectedAddress, to: token, data }],
   });
@@ -441,7 +547,7 @@ async function executeSwap() {
   $("#swapButton").textContent = "Approve token";
   await sendApproval(tokenIn, amountIn);
   $("#swapButton").textContent = "Confirm swap";
-  const txHash = await window.ethereum.request({
+  const txHash = await activeProvider().request({
     method: "eth_sendTransaction",
     params: [{ from: state.connectedAddress, to: routerAddress, data: buildSwapData(amountIn, minOut, tokenIn, tokenOut) }],
   });
@@ -509,7 +615,7 @@ async function addLiquidity() {
   showSafeStatus(`Approve ${tokenB}`);
   await sendApproval(addressB, amountBWei);
   showSafeStatus("Confirm liquidity");
-  const txHash = await window.ethereum.request({
+  const txHash = await activeProvider().request({
     method: "eth_sendTransaction",
     params: [{ from: state.connectedAddress, to: routerAddress, data: buildAddLiquidityData(addressA, addressB, amountAWei, amountBWei) }],
   });
@@ -575,8 +681,8 @@ async function claimUsdxFaucet() {
     return;
   }
 
-  if (usdxFaucetAddress && window.ethereum) {
-    await window.ethereum.request({
+  if (usdxFaucetAddress && activeProvider()) {
+    await activeProvider().request({
       method: "eth_sendTransaction",
       params: [{ from: state.connectedAddress, to: usdxFaucetAddress, data: "0x4e71d92d" }],
     });
@@ -654,14 +760,20 @@ function initDex() {
   $("#refreshQuote").addEventListener("click", quoteSwap);
   $("#swapButton").addEventListener("click", executeSwap);
   $("#addLiquidityButton").addEventListener("click", addLiquidity);
-  $("#walletButton").addEventListener("click", connectWallet);
+  $("#walletButton").addEventListener("click", openWalletModal);
+  $("#walletModalClose")?.addEventListener("click", closeWalletModal);
+  $("#walletModal")?.addEventListener("click", (event) => {
+    if (event.target === $("#walletModal")) closeWalletModal();
+  });
   $("#poolSearch")?.addEventListener("input", renderPoolTable);
   $("#createPositionButton")?.addEventListener("click", focusCreatePosition);
   $("#usdxFaucetButton")?.addEventListener("click", claimUsdxFaucet);
   renderPoolTable();
+  requestWalletAnnouncements();
 
-  if (window.ethereum) {
-    window.ethereum
+  if (activeProvider()) {
+    selectedProvider = activeProvider();
+    activeProvider()
       .request({ method: "eth_accounts" })
       .then(async (accounts) => {
         state.connectedAddress = accounts?.[0] || "";
