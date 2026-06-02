@@ -584,6 +584,22 @@ input {
   margin-top: 12px;
 }
 
+.wrap-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.wrap-actions input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #141516;
+  color: #f3f4f7;
+  padding: 0 14px;
+}
+
 .faucet-link {
   display: inline-flex;
   min-height: 42px;

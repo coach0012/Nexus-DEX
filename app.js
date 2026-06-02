@@ -7,30 +7,31 @@ const NEXUS_CHAIN = {
 };
 
 const NEXUS_CHAIN_ID = 3945;
-const ROUTER_ADDRESS = "0x28464af7B8db8D4C934FF269244Db76a2c6f75B5";
-const USDX_ADDRESS = "0x279D60ad50FF69e6926089B023c4f4460542af94";
+const ROUTER_ADDRESS = "0x329fB90b98C978C6E224b2f817D05Ad01BFBF4De";
+const USDX_ADDRESS = "0x5a0cBf89795e66Ba5480C01a591D2B5cfA4A2AC9";
+const WNEX_ADDRESS = "0x8a2f1fe2E4Ae4b4E15689810529d532F9e9a7645";
 const WALLETCONNECT_PROJECT_ID = window.NEXUS_WALLETCONNECT_PROJECT_ID || "";
 const CLAIM_SELECTOR = "0x4e71d92d";
 const DECIMALS = 18n;
 
 const tokens = {
-  NEX: { symbol: "NEX", address: "", price: 0.018 },
+  WNEX: { symbol: "WNEX", address: WNEX_ADDRESS, price: 0.018 },
   USDX: { symbol: "USDX", address: USDX_ADDRESS, price: 1 },
   WETH: { symbol: "WETH", address: "", price: 3820 },
   USDC: { symbol: "USDC", address: "", price: 1 },
 };
 
 const pools = [
-  ["NEX / USDX", "6.40%", "$116.78K", "$2.05K", "$20.48"],
-  ["NEX / USDC", "0.04%", "$19.6K", "$6.40", "$0.02"],
-  ["NEX / WETH", "1.60%", "$68.74K", "$302.02", "$3.02"],
-  ["wBTC / NEX", "1.27%", "$59.09K", "$206.22", "$2.06"],
+  ["WNEX / USDX", "6.40%", "$116.78K", "$2.05K", "$20.48"],
+  ["WNEX / USDC", "0.04%", "$19.6K", "$6.40", "$0.02"],
+  ["WNEX / WETH", "1.60%", "$68.74K", "$302.02", "$3.02"],
+  ["wBTC / WNEX", "1.27%", "$59.09K", "$206.22", "$2.06"],
 ];
 
 const state = {
   provider: null,
   account: "",
-  balances: { NEX: 0, USDX: 0, WETH: 0, USDC: 0 },
+  balances: { NEX: 0, WNEX: 0, USDX: 0, WETH: 0, USDC: 0 },
   wallets: new Map(),
 };
 
@@ -238,12 +239,29 @@ function toWord(value) {
   return String(value).replace(/^0x/i, "").padStart(64, "0");
 }
 
+function uintWord(value) {
+  return BigInt(value).toString(16).padStart(64, "0");
+}
+
+function addressWord(address) {
+  return toWord(address);
+}
+
+function hexValue(value) {
+  return `0x${BigInt(value).toString(16)}`;
+}
+
 function parseUnits(value) {
   const raw = String(value || "0").trim();
   const [whole, fraction = ""] = raw.split(".");
   const wholePart = whole.replace(/\D/g, "") || "0";
   const fractionPart = fraction.replace(/\D/g, "").slice(0, Number(DECIMALS)).padEnd(Number(DECIMALS), "0");
   return BigInt(`${wholePart}${fractionPart}`);
+}
+
+function unitsFromNumber(value) {
+  if (!Number.isFinite(value) || value <= 0) return 0n;
+  return parseUnits(value.toFixed(Number(DECIMALS)));
 }
 
 function formatUnits(value) {
@@ -269,8 +287,49 @@ async function refreshBalances() {
   if (!state.provider || !state.account) return;
   const nexHex = await state.provider.request({ method: "eth_getBalance", params: [state.account, "latest"] });
   state.balances.NEX = formatUnits(BigInt(nexHex || "0x0"));
+  state.balances.WNEX = await readErc20Balance("WNEX");
   state.balances.USDX = await readErc20Balance("USDX");
   updateBalances();
+}
+
+async function approveToken(tokenAddress, amount) {
+  const data = `0x095ea7b3${addressWord(ROUTER_ADDRESS)}${uintWord(amount)}`;
+  return state.provider.request({
+    method: "eth_sendTransaction",
+    params: [{ from: state.account, to: tokenAddress, data }],
+  });
+}
+
+function swapData(amountIn, amountOutMin, tokenIn, tokenOut) {
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+  return [
+    "0x38ed1739",
+    uintWord(amountIn),
+    uintWord(amountOutMin),
+    uintWord(160n),
+    addressWord(state.account),
+    uintWord(deadline),
+    uintWord(2n),
+    addressWord(tokenIn),
+    addressWord(tokenOut),
+  ].join("");
+}
+
+function addLiquidityData(tokenA, tokenB, amountA, amountB) {
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+  const minA = (amountA * 99n) / 100n;
+  const minB = (amountB * 99n) / 100n;
+  return [
+    "0xe8e33700",
+    addressWord(tokenA),
+    addressWord(tokenB),
+    uintWord(amountA),
+    uintWord(amountB),
+    uintWord(minA),
+    uintWord(minB),
+    addressWord(state.account),
+    uintWord(deadline),
+  ].join("");
 }
 
 function updateBalances() {
@@ -341,16 +400,60 @@ async function claimUsdx() {
   }
 }
 
+async function wrapNex() {
+  if (!(await ensureConnected())) return;
+  if (!WNEX_ADDRESS) {
+    setStatus("Deploy WrappedNEX and set WNEX_ADDRESS in app.js first.");
+    return;
+  }
+  const amount = parseUnits($("#wrapAmount")?.value || "0");
+  if (amount <= 0n) {
+    setStatus("Enter NEX amount to wrap.");
+    return;
+  }
+  try {
+    setStatus("Confirm wrap NEX transaction...");
+    await state.provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: state.account, to: WNEX_ADDRESS, value: hexValue(amount), data: "0xd0e30db0" }],
+    });
+    setStatus("Wrap transaction sent.");
+    setTimeout(refreshBalances, 2500);
+  } catch (error) {
+    setStatus(error?.message || "Wrap failed.");
+  }
+}
+
 async function executeSwap() {
   const quote = quoteSwap();
   if (!quote || !(await ensureConnected())) return;
   const tokenIn = tokens[quote.sell]?.address;
   const tokenOut = tokens[quote.buy]?.address;
   if (!tokenIn || !tokenOut) {
-    setStatus("Live swaps need ERC-20 token addresses. Native NEX needs wrapped NEX first.");
+    setStatus("Set live ERC-20 addresses first. Use WNEX, not native NEX, for swaps.");
     return;
   }
-  setStatus(`Router ready at ${shortAddress(ROUTER_ADDRESS)}. Add reviewed router ABI call before real swaps.`);
+  try {
+    const amountIn = parseUnits($("#sellAmount")?.value || "0");
+    const minOut = unitsFromNumber(quote.amountOut * 0.99);
+    if (amountIn <= 0n || minOut <= 0n) {
+      setStatus("Enter a valid swap amount.");
+      return;
+    }
+    setText("#swapButton", "Approve token");
+    await approveToken(tokenIn, amountIn);
+    setText("#swapButton", "Confirm swap");
+    await state.provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: state.account, to: ROUTER_ADDRESS, data: swapData(amountIn, minOut, tokenIn, tokenOut) }],
+    });
+    setStatus("Swap transaction sent.");
+    setText("#swapButton", "Swap sent");
+    setTimeout(refreshBalances, 2500);
+  } catch (error) {
+    setStatus(error?.message || "Swap failed.");
+    setText("#swapButton", "Review swap");
+  }
 }
 
 async function addLiquidity() {
@@ -358,10 +461,34 @@ async function addLiquidity() {
   const tokenA = $("#poolTokenA")?.value || "NEX";
   const tokenB = $("#poolTokenB")?.value || "USDX";
   if (!tokens[tokenA]?.address || !tokens[tokenB]?.address) {
-    setStatus("LP needs two ERC-20 token addresses. Native NEX needs wrapped NEX first.");
+    setStatus("LP needs two ERC-20 addresses. Use WNEX + USDX after deploying WrappedNEX.");
     return;
   }
-  setStatus("LP transaction path ready. Add reviewed router ABI call before real deposits.");
+  const amountA = parseUnits($("#poolAmountA")?.value || "0");
+  const amountB = parseUnits($("#poolAmountB")?.value || "0");
+  if (amountA <= 0n || amountB <= 0n) {
+    setStatus("Enter both liquidity amounts.");
+    return;
+  }
+  try {
+    setStatus(`Approve ${tokenA}`);
+    await approveToken(tokens[tokenA].address, amountA);
+    setStatus(`Approve ${tokenB}`);
+    await approveToken(tokens[tokenB].address, amountB);
+    setStatus("Confirm add liquidity");
+    await state.provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: state.account,
+        to: ROUTER_ADDRESS,
+        data: addLiquidityData(tokens[tokenA].address, tokens[tokenB].address, amountA, amountB),
+      }],
+    });
+    setStatus("Liquidity transaction sent.");
+    setTimeout(refreshBalances, 2500);
+  } catch (error) {
+    setStatus(error?.message || "Add liquidity failed.");
+  }
 }
 
 function setupTokens() {
@@ -370,9 +497,9 @@ function setupTokens() {
     const node = $(selector);
     if (node) node.innerHTML = options;
   });
-  if ($("#sellToken")) $("#sellToken").value = "NEX";
+  if ($("#sellToken")) $("#sellToken").value = "WNEX";
   if ($("#buyToken")) $("#buyToken").value = "USDX";
-  if ($("#poolTokenA")) $("#poolTokenA").value = "NEX";
+  if ($("#poolTokenA")) $("#poolTokenA").value = "WNEX";
   if ($("#poolTokenB")) $("#poolTokenB").value = "USDX";
 }
 
@@ -433,6 +560,7 @@ function bindEvents() {
   $("#refreshQuote")?.addEventListener("click", quoteSwap);
   $("#swapButton")?.addEventListener("click", executeSwap);
   $("#usdxFaucetButton")?.addEventListener("click", claimUsdx);
+  $("#wrapButton")?.addEventListener("click", wrapNex);
   $("#addLiquidityButton")?.addEventListener("click", addLiquidity);
   $("#poolSearch")?.addEventListener("input", renderPoolTable);
   $("#createPositionButton")?.addEventListener("click", () => {
