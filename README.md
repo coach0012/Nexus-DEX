@@ -12,8 +12,25 @@ Single-page DEX aggregator prototype for Nexus, plus deploy-ready testnet contra
 - Recent swap activity
 - USDX test-token faucet flow
 - Official NEX faucet link for Nexus testnet gas
+- Injected wallet picker plus optional WalletConnect support
 
 Legacy entry files redirect to `dex.html` so the project now opens as NEXUS DEX only.
+
+## WalletConnect
+
+WalletConnect requires a free project id from Reown:
+
+1. Create a project at `https://cloud.reown.com`.
+2. Copy the project id.
+3. Paste it into `dex.html`:
+
+```html
+<script>
+  window.NEXUS_WALLETCONNECT_PROJECT_ID = "YOUR_PROJECT_ID";
+</script>
+```
+
+After that, the Connect button will show a WalletConnect option for QR/mobile wallet connections.
 
 ## Contracts
 
@@ -39,13 +56,11 @@ const routerAddress = "YOUR_ROUTER_ADDRESS";
 const usdxFaucetAddress = "YOUR_USDX_ADDRESS";
 ```
 
-Until those addresses are configured, the frontend keeps swaps and LP actions in local demo mode.
-
 Security defaults:
 
 - Wallet connect switches/adds Nexus testnet before actions.
-- USDX faucet has a local cooldown.
-- Swaps and LP deposits remain simulated unless contract addresses are explicitly configured.
+- USDX faucet has a local cooldown and sends a real testnet transaction.
+- Swaps and LP deposits require configured live ERC-20 token addresses.
 - Router has deadline and minimum-output checks.
 - Pair contract has a simple reentrancy lock around mint/burn/swap.
 - Use test wallets and audited contracts before handling real funds.
