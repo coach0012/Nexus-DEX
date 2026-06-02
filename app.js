@@ -110,6 +110,17 @@ function renderWallets() {
   const list = $("#walletList");
   if (!list) return;
 
+  if (state.account) {
+    list.innerHTML = `
+      <button class="wallet-option" type="button" id="disconnectWalletOption">
+        <span class="wallet-option-icon">D</span>
+        <span>Disconnect<small>${escapeHtml(shortAddress(state.account))}</small></span>
+      </button>
+    `;
+    $("#disconnectWalletOption")?.addEventListener("click", disconnectWallet);
+    return;
+  }
+
   const injected = Array.from(state.wallets.values())
     .map((wallet) => {
       const icon = wallet.icon
@@ -163,6 +174,19 @@ function closeWalletModal() {
   if (modal) modal.hidden = true;
 }
 
+function disconnectWallet() {
+  state.provider = null;
+  state.account = "";
+  state.balances = { NEX: 0, WNEX: 0, USDX: 0, WETH: 0, USDC: 0 };
+  setText("#walletLabel", "Connect");
+  const pill = $("#walletBalance");
+  if (pill) pill.hidden = true;
+  updateBalances();
+  updateSwapButton();
+  closeWalletModal();
+  setStatus("Wallet disconnected.");
+}
+
 async function requestAccounts(provider) {
   return provider.request({ method: "eth_requestAccounts" });
 }
@@ -194,6 +218,7 @@ async function connectProvider(provider, name = "Wallet") {
     closeWalletModal();
     setStatus("Wallet connected.");
     await refreshBalances();
+    updateSwapButton();
     return true;
   } catch (error) {
     setText("#walletLabel", state.account ? shortAddress(state.account) : "Connect");
@@ -357,6 +382,14 @@ function updateBalances() {
   }
 }
 
+function setSwapButtonState(label, stateName) {
+  const button = $("#swapButton");
+  if (!button) return;
+  button.textContent = label;
+  button.classList.remove("needs-wallet", "enter-amount", "ready", "pending");
+  button.classList.add(stateName);
+}
+
 function quoteSwap() {
   const sell = $("#sellToken")?.value || "NEX";
   const buy = $("#buyToken")?.value || "USDX";
@@ -365,12 +398,20 @@ function quoteSwap() {
   const to = tokens[buy];
 
   updateBalances();
+  if (!state.account) {
+    if ($("#buyAmount")) $("#buyAmount").value = "";
+    setText("#payUsd", "$0");
+    setText("#receiveUsd", "$0");
+    setText("#quoteBox", "Connect wallet to start.");
+    setSwapButtonState("Connect wallet", "needs-wallet");
+    return null;
+  }
   if (!from || !to || sell === buy || !Number.isFinite(amount) || amount <= 0) {
     if ($("#buyAmount")) $("#buyAmount").value = "";
     setText("#payUsd", "$0");
     setText("#receiveUsd", "$0");
     setText("#quoteBox", "Enter an amount.");
-    setText("#swapButton", "Enter amount");
+    setSwapButtonState("Enter amount", "enter-amount");
     return null;
   }
 
@@ -385,8 +426,12 @@ function quoteSwap() {
       <div class="quote-line"><span>Est. receive</span><strong>${formatNumber(amountOut)} ${buy}</strong></div>
     `;
   }
-  setText("#swapButton", "Review swap");
+  setSwapButtonState("Review swap", "ready");
   return { sell, buy, amount, amountOut };
+}
+
+function updateSwapButton() {
+  quoteSwap();
 }
 
 async function ensureConnected() {
@@ -436,8 +481,13 @@ async function wrapNex() {
 }
 
 async function executeSwap() {
+  if (!state.account || !state.provider) {
+    openWalletModal();
+    setStatus("Connect wallet first.");
+    return;
+  }
   const quote = quoteSwap();
-  if (!quote || !(await ensureConnected())) return;
+  if (!quote) return;
   const tokenIn = tokens[quote.sell]?.address;
   const tokenOut = tokens[quote.buy]?.address;
   if (!tokenIn || !tokenOut) {
@@ -451,19 +501,19 @@ async function executeSwap() {
       setStatus("Enter a valid swap amount.");
       return;
     }
-    setText("#swapButton", "Approve token");
+    setSwapButtonState("Approve token", "pending");
     await approveToken(tokenIn, amountIn);
-    setText("#swapButton", "Confirm swap");
+    setSwapButtonState("Confirm swap", "pending");
     await state.provider.request({
       method: "eth_sendTransaction",
       params: [{ from: state.account, to: ROUTER_ADDRESS, data: swapData(amountIn, minOut, tokenIn, tokenOut), gas: GAS_LIMITS.swap }],
     });
     setStatus("Swap transaction sent.");
-    setText("#swapButton", "Swap sent");
+    setSwapButtonState("Swap sent", "pending");
     setTimeout(refreshBalances, 2500);
   } catch (error) {
     setStatus(error?.message || "Swap failed.");
-    setText("#swapButton", "Review swap");
+    setSwapButtonState("Review swap", "ready");
   }
 }
 
@@ -578,6 +628,23 @@ function bindEvents() {
   $("#createPositionButton")?.addEventListener("click", () => {
     document.querySelector(".quick-pool")?.scrollIntoView({ behavior: "smooth", block: "center" });
   });
+  document.querySelectorAll("[data-page-link]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      showPage(link.dataset.pageLink);
+    });
+  });
+}
+
+function showPage(page) {
+  const next = page || "swap";
+  document.querySelectorAll("[data-page]").forEach((section) => {
+    section.classList.toggle("active", section.dataset.page === next);
+  });
+  document.querySelectorAll("[data-page-link]").forEach((link) => {
+    link.classList.toggle("active", link.dataset.pageLink === next);
+  });
+  history.replaceState(null, "", `#${next}`);
 }
 
 async function restoreConnection() {
@@ -594,6 +661,7 @@ async function restoreConnection() {
     if (!state.account) return;
     setText("#walletLabel", shortAddress(state.account));
     await refreshBalances();
+    updateSwapButton();
   } catch {
     setStatus("Wallet detected. Click Connect.");
   }
@@ -606,6 +674,7 @@ function init() {
   renderStaticPanels();
   renderPoolTable();
   quoteSwap();
+  showPage((location.hash || "#swap").slice(1));
   restoreConnection();
 }
 

@@ -332,6 +332,14 @@ input {
   padding: 82px 24px 120px;
 }
 
+.page-view {
+  display: none;
+}
+
+.page-view.active {
+  display: block;
+}
+
 .blue-floor {
   position: fixed;
   left: -4vw;
@@ -545,6 +553,26 @@ input {
   font-size: 16px;
 }
 
+.swap-submit.needs-wallet {
+  background: linear-gradient(135deg, #246dff, #7aa8ff);
+  color: #fff;
+}
+
+.swap-submit.enter-amount {
+  background: #18191b;
+  color: #6c7078;
+}
+
+.swap-submit.ready {
+  background: linear-gradient(135deg, #1a4fcc, #3c7fff);
+  color: #fff;
+}
+
+.swap-submit.pending {
+  background: #222a35;
+  color: #9fc4ff;
+}
+
 .mode-tabs {
   position: relative;
   z-index: 3;
@@ -627,6 +655,14 @@ input {
   display: grid;
   grid-template-columns: minmax(240px, 0.8fr) minmax(330px, 1.2fr) minmax(240px, 0.8fr);
   gap: 14px;
+}
+
+.faucet-page {
+  position: relative;
+  z-index: 2;
+  width: min(560px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding-top: 72px;
 }
 
 .quick-pool {
@@ -746,6 +782,11 @@ input {
   z-index: 2;
   width: min(1690px, calc(100vw - 48px));
   margin: 86px auto 0;
+}
+
+.liquidity-page .quick-pool {
+  width: min(720px, 100%);
+  margin: 0 0 28px;
 }
 
 .liquidity-head {

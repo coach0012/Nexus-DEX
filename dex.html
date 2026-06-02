@@ -11,9 +11,9 @@
     <header class="topbar">
       <a class="brand" href="dex.html" aria-label="NEXUS DEX home">NEXUS</a>
       <nav class="nav" aria-label="Main navigation">
-        <a class="active" href="#swap">Swap</a>
-        <a href="#liquidity">Pools</a>
-        <a href="#faucet">Faucet</a>
+        <a class="active" href="#swap" data-page-link="swap">Swap</a>
+        <a href="#liquidity" data-page-link="liquidity">Pools</a>
+        <a href="#faucet" data-page-link="faucet">Faucet</a>
       </nav>
       <div class="top-actions">
         <div class="balance-pill" id="walletBalance" hidden>0 NEX</div>
@@ -44,7 +44,7 @@
     <main class="dex-stage">
       <div class="blue-floor" aria-hidden="true"></div>
 
-      <section class="swap-zone" id="swap">
+      <section class="swap-zone page-view active" id="swap" data-page="swap">
         <div class="swap-titlebar">
           <span>Swap</span>
           <div>
@@ -97,17 +97,17 @@
         </div>
 
         <div class="quote-box" id="quoteBox" aria-live="polite"></div>
-        <button class="swap-submit" id="swapButton" type="button">Enter amount</button>
+        <button class="swap-submit needs-wallet" id="swapButton" type="button">Connect wallet</button>
 
         <nav class="mode-tabs" aria-label="DEX modes">
-          <a class="active" href="#swap">Swap</a>
-          <a href="#faucet">Faucet</a>
-          <a href="#liquidity">Pools</a>
+          <a class="active" href="#swap" data-page-link="swap">Swap</a>
+          <a href="#faucet" data-page-link="faucet">Faucet</a>
+          <a href="#liquidity" data-page-link="liquidity">Pools</a>
         </nav>
       </section>
 
-      <section class="info-grid">
-        <aside class="glass-panel" id="faucet">
+      <section class="faucet-page page-view" id="faucet" data-page="faucet">
+        <aside class="glass-panel" id="faucetPanel">
           <p class="eyebrow">Faucet</p>
           <div class="market-panel">
             <div><span>Network</span><strong>Nexus Testnet</strong></div>
@@ -124,7 +124,9 @@
           </div>
           <p class="security-note">Test wallets only. USDX claims use your deployed Nexus testnet token.</p>
         </aside>
+      </section>
 
+      <section class="liquidity-page page-view" id="liquidity" data-page="liquidity">
         <section class="glass-panel quick-pool">
           <p class="eyebrow">Quick LP</p>
           <h2>Add liquidity</h2>
@@ -152,14 +154,6 @@
           </div>
           <div class="pool-list" id="poolList"></div>
         </section>
-
-        <aside class="glass-panel">
-          <p class="eyebrow">Recent</p>
-          <div id="swapLog"></div>
-        </aside>
-      </section>
-
-      <section class="liquidity-page" id="liquidity">
         <div class="liquidity-head">
           <h1>Liquidity Pools</h1>
           <div class="pool-tools">
