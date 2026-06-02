@@ -4,6 +4,8 @@ const balancesKey = "nexusdex.live.balances.v1";
 const faucetKey = "nexusdex.faucet.v1";
 const routerAddress = "0x28464af7B8db8D4C934FF269244Db76a2c6f75B5";
 const usdxFaucetAddress = "0x279D60ad50FF69e6926089B023c4f4460542af94";
+const walletConnectProjectId = window.NEXUS_WALLETCONNECT_PROJECT_ID || "";
+const NEXUS_CHAIN_ID_NUMBER = 3945;
 const tokenAddresses = {
   NEX: "",
   USDX: usdxFaucetAddress,
@@ -43,14 +45,6 @@ const state = {
 };
 const walletProviders = new Map();
 let selectedProvider = null;
-
-window.addEventListener("eip6963:announceProvider", (event) => {
-  const detail = event.detail || {};
-  if (!detail.provider) return;
-  const info = detail.info || {};
-  addWalletProvider(info.rdns || info.uuid || info.name || crypto.randomUUID(), info.name || "Wallet", detail.provider, info.icon || "");
-  renderWalletList();
-});
 
 const marketPools = [
   {
@@ -208,15 +202,22 @@ function requestWalletAnnouncements() {
   window.dispatchEvent(new Event("eip6963:requestProvider"));
 }
 
+function setupWalletDiscovery() {
+  window.addEventListener("eip6963:announceProvider", (event) => {
+    const detail = event.detail || {};
+    if (!detail.provider) return;
+    const info = detail.info || {};
+    addWalletProvider(info.rdns || info.uuid || info.name || "wallet", info.name || "Wallet", detail.provider, info.icon || "");
+    renderWalletList();
+  });
+  requestWalletAnnouncements();
+}
+
 function renderWalletList() {
   const walletList = $("#walletList");
   if (!walletList) return;
   const wallets = Array.from(walletProviders.values());
-  if (!wallets.length) {
-    walletList.innerHTML = `<div class="wallet-help">No wallet extension detected in this browser.</div>`;
-    return;
-  }
-  walletList.innerHTML = wallets
+  const injectedOptions = wallets
     .map(
       (wallet) => `
         <button class="wallet-option" type="button" data-wallet-id="${wallet.id}">
@@ -230,7 +231,21 @@ function renderWalletList() {
       `,
     )
     .join("");
+  walletList.innerHTML = `
+    <button class="wallet-option walletconnect-option" type="button" id="walletConnectOption">
+      <span class="wallet-option-icon">W</span>
+      <span>WalletConnect<small>QR code and mobile wallets</small></span>
+    </button>
+    <button class="wallet-option" type="button" id="metaMaskMobileOption">
+      <span class="wallet-option-icon">M</span>
+      <span>Open in MetaMask<small>Best for mobile or in-app browsers</small></span>
+    </button>
+    ${injectedOptions || `<div class="wallet-help">No browser extension detected. WalletConnect can still connect mobile wallets.</div>`}
+  `;
+  $("#walletConnectOption")?.addEventListener("click", connectWalletConnect);
+  $("#metaMaskMobileOption")?.addEventListener("click", openMetaMaskMobile);
   walletList.querySelectorAll(".wallet-option").forEach((button) => {
+    if (!button.dataset.walletId) return;
     button.addEventListener("click", () => {
       const wallet = walletProviders.get(button.dataset.walletId);
       if (!wallet) return;
@@ -239,6 +254,15 @@ function renderWalletList() {
       connectWallet(wallet.provider, wallet.name);
     });
   });
+}
+
+function openMetaMaskMobile() {
+  const target = `${window.location.host}${window.location.pathname}${window.location.search}`;
+  if (!target || target.startsWith("localhost")) {
+    showSafeStatus("Deploy on Vercel, then open this link in MetaMask mobile.");
+    return;
+  }
+  window.location.href = `https://metamask.app.link/dapp/${target}`;
 }
 
 function openWalletModal() {
@@ -269,7 +293,7 @@ async function connectWallet(provider = activeProvider(), walletName = "") {
 
   try {
     selectedProvider = provider;
-    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    const accounts = await requestWalletAccounts(provider);
     state.connectedAddress = accounts[0] || "";
     if (!state.connectedAddress) throw new Error("No wallet account returned.");
     if (walletLabel) walletLabel.textContent = shortAddress(state.connectedAddress);
@@ -287,6 +311,50 @@ async function connectWallet(provider = activeProvider(), walletName = "") {
     showSafeStatus(error?.message || "Wallet connection rejected.");
     if (walletLabel) walletLabel.textContent = state.connectedAddress ? shortAddress(state.connectedAddress) : "Connect";
     if (walletButton) walletButton.disabled = false;
+    return false;
+  }
+}
+
+async function requestWalletAccounts(provider) {
+  if (typeof provider.enable === "function") {
+    try {
+      const accounts = await provider.enable();
+      if (Array.isArray(accounts) && accounts.length) return accounts;
+    } catch {
+      // Fall through to the EIP-1193 request path.
+    }
+  }
+  return provider.request({ method: "eth_requestAccounts" });
+}
+
+async function connectWalletConnect() {
+  if (!walletConnectProjectId || walletConnectProjectId === "YOUR_PROJECT_ID") {
+    showSafeStatus("Add your WalletConnect project id in dex.html first.");
+    return false;
+  }
+
+  try {
+    showSafeStatus("Loading WalletConnect...");
+    const module = await import("https://esm.sh/@walletconnect/ethereum-provider@2.17.0?bundle");
+    const EthereumProvider = module.default || module.EthereumProvider;
+    const provider = await EthereumProvider.init({
+      projectId: walletConnectProjectId,
+      chains: [NEXUS_CHAIN_ID_NUMBER],
+      optionalChains: [NEXUS_CHAIN_ID_NUMBER],
+      rpcMap: { [NEXUS_CHAIN_ID_NUMBER]: NEXUS_TESTNET.rpcUrls[0] },
+      showQrModal: true,
+      metadata: {
+        name: "NEXUS DEX",
+        description: "NEXUS DEX swaps, faucet, and liquidity pools.",
+        url: window.location.origin || "https://nexusdex.local",
+        icons: [],
+      },
+    });
+    selectedProvider = provider;
+    closeWalletModal();
+    return connectWallet(provider, "WalletConnect");
+  } catch (error) {
+    showSafeStatus(error?.message || "WalletConnect failed.");
     return false;
   }
 }
@@ -769,7 +837,7 @@ function initDex() {
   $("#createPositionButton")?.addEventListener("click", focusCreatePosition);
   $("#usdxFaucetButton")?.addEventListener("click", claimUsdxFaucet);
   renderPoolTable();
-  requestWalletAnnouncements();
+  setupWalletDiscovery();
 
   if (activeProvider()) {
     selectedProvider = activeProvider();
