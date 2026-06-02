@@ -13,6 +13,13 @@ const WNEX_ADDRESS = "0x8a2f1fe2E4Ae4b4E15689810529d532F9e9a7645";
 const WALLETCONNECT_PROJECT_ID = window.NEXUS_WALLETCONNECT_PROJECT_ID || "";
 const CLAIM_SELECTOR = "0x4e71d92d";
 const DECIMALS = 18n;
+const GAS_LIMITS = {
+  claimUsdx: "0x249f0",
+  wrapNex: "0x1d4c0",
+  approve: "0x186a0",
+  swap: "0x7a120",
+  addLiquidity: "0x989680",
+};
 
 const tokens = {
   WNEX: { symbol: "WNEX", address: WNEX_ADDRESS, price: 0.018 },
@@ -285,18 +292,22 @@ async function readErc20Balance(symbol) {
 
 async function refreshBalances() {
   if (!state.provider || !state.account) return;
-  const nexHex = await state.provider.request({ method: "eth_getBalance", params: [state.account, "latest"] });
-  state.balances.NEX = formatUnits(BigInt(nexHex || "0x0"));
-  state.balances.WNEX = await readErc20Balance("WNEX");
-  state.balances.USDX = await readErc20Balance("USDX");
-  updateBalances();
+  try {
+    const nexHex = await state.provider.request({ method: "eth_getBalance", params: [state.account, "latest"] });
+    state.balances.NEX = formatUnits(BigInt(nexHex || "0x0"));
+    state.balances.WNEX = await readErc20Balance("WNEX");
+    state.balances.USDX = await readErc20Balance("USDX");
+    updateBalances();
+  } catch (error) {
+    setStatus("RPC is busy. Transaction may still work; retry balances later.");
+  }
 }
 
 async function approveToken(tokenAddress, amount) {
   const data = `0x095ea7b3${addressWord(ROUTER_ADDRESS)}${uintWord(amount)}`;
   return state.provider.request({
     method: "eth_sendTransaction",
-    params: [{ from: state.account, to: tokenAddress, data }],
+    params: [{ from: state.account, to: tokenAddress, data, gas: GAS_LIMITS.approve }],
   });
 }
 
@@ -391,10 +402,10 @@ async function claimUsdx() {
     setStatus("Confirm USDX faucet transaction...");
     await state.provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: state.account, to: USDX_ADDRESS, data: CLAIM_SELECTOR }],
+      params: [{ from: state.account, to: USDX_ADDRESS, data: CLAIM_SELECTOR, gas: GAS_LIMITS.claimUsdx }],
     });
     setStatus("USDX claim sent.");
-    setTimeout(refreshBalances, 2500);
+    setStatus("USDX claim sent. Refresh balances after confirmation.");
   } catch (error) {
     setStatus(error?.message || "USDX claim failed.");
   }
@@ -415,10 +426,10 @@ async function wrapNex() {
     setStatus("Confirm wrap NEX transaction...");
     await state.provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: state.account, to: WNEX_ADDRESS, value: hexValue(amount), data: "0xd0e30db0" }],
+      params: [{ from: state.account, to: WNEX_ADDRESS, value: hexValue(amount), data: "0xd0e30db0", gas: GAS_LIMITS.wrapNex }],
     });
     setStatus("Wrap transaction sent.");
-    setTimeout(refreshBalances, 2500);
+    setStatus("Wrap transaction sent. Refresh balances after confirmation.");
   } catch (error) {
     setStatus(error?.message || "Wrap failed.");
   }
@@ -445,7 +456,7 @@ async function executeSwap() {
     setText("#swapButton", "Confirm swap");
     await state.provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: state.account, to: ROUTER_ADDRESS, data: swapData(amountIn, minOut, tokenIn, tokenOut) }],
+      params: [{ from: state.account, to: ROUTER_ADDRESS, data: swapData(amountIn, minOut, tokenIn, tokenOut), gas: GAS_LIMITS.swap }],
     });
     setStatus("Swap transaction sent.");
     setText("#swapButton", "Swap sent");
@@ -482,6 +493,7 @@ async function addLiquidity() {
         from: state.account,
         to: ROUTER_ADDRESS,
         data: addLiquidityData(tokens[tokenA].address, tokens[tokenB].address, amountA, amountB),
+        gas: GAS_LIMITS.addLiquidity,
       }],
     });
     setStatus("Liquidity transaction sent.");
