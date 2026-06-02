@@ -218,7 +218,7 @@ input {
   width: min(420px, 100%);
   border: 1px solid var(--line);
   border-radius: 24px;
-  background: #101113;
+  background: #111316;
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.48);
   padding: 18px;
 }
@@ -234,8 +234,8 @@ input {
 .wallet-sheet h2 {
   margin: 0;
   color: #f4f6fb;
-  font-size: 20px;
-  font-weight: 650;
+  font-size: 19px;
+  font-weight: 560;
 }
 
 .wallet-close {
@@ -261,7 +261,7 @@ input {
   gap: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  background: #17191d;
+  background: #171a1f;
   color: #f5f7fb;
   padding: 0 14px;
   text-align: left;
@@ -497,6 +497,30 @@ input {
   margin-top: 16px;
   color: #686b72;
   font-size: 14px;
+}
+
+.safety-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.safety-panel div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(105, 168, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(13, 18, 24, 0.78);
+  padding: 10px 12px;
+  color: #8c939f;
+  font-size: 12px;
+}
+
+.safety-panel strong {
+  color: #a9c9ff;
+  font-weight: 520;
+  text-align: right;
 }
 
 .quote-line {

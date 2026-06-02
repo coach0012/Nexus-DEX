@@ -114,7 +114,7 @@ function renderWallets() {
     list.innerHTML = `
       <button class="wallet-option" type="button" id="disconnectWalletOption">
         <span class="wallet-option-icon">D</span>
-        <span>Disconnect<small>${escapeHtml(shortAddress(state.account))}</small></span>
+        <span>Disconnect wallet<small>${escapeHtml(shortAddress(state.account))}</small></span>
       </button>
     `;
     $("#disconnectWalletOption")?.addEventListener("click", disconnectWallet);
@@ -129,7 +129,7 @@ function renderWallets() {
       return `
         <button class="wallet-option" type="button" data-wallet="${wallet.id}">
           ${icon}
-          <span>${escapeHtml(wallet.name)}<small>Browser extension</small></span>
+          <span>${escapeHtml(wallet.name)}<small>Connect account only</small></span>
         </button>
       `;
     })
@@ -139,7 +139,7 @@ function renderWallets() {
     ${injected}
     <button class="wallet-option" type="button" id="walletConnectOption">
       <span class="wallet-option-icon">W</span>
-      <span>WalletConnect<small>QR / mobile wallets</small></span>
+      <span>WalletConnect<small>Account access only</small></span>
     </button>
     <button class="wallet-option" type="button" id="metaMaskMobileOption">
       <span class="wallet-option-icon">M</span>
@@ -382,6 +382,12 @@ function updateBalances() {
   }
 }
 
+function updateSafetyPreview(sell = $("#sellToken")?.value || "WNEX", amount = 0) {
+  const approval = amount > 0 ? `${formatNumber(amount)} ${sell}` : "Exact amount only";
+  setText("#approvalPreview", approval);
+  setText("#contractPreview", shortAddress(ROUTER_ADDRESS));
+}
+
 function setSwapButtonState(label, stateName) {
   const button = $("#swapButton");
   if (!button) return;
@@ -398,6 +404,7 @@ function quoteSwap() {
   const to = tokens[buy];
 
   updateBalances();
+  updateSafetyPreview(sell, amount);
   if (!state.account) {
     if ($("#buyAmount")) $("#buyAmount").value = "";
     setText("#payUsd", "$0");
@@ -449,7 +456,6 @@ async function claimUsdx() {
       method: "eth_sendTransaction",
       params: [{ from: state.account, to: USDX_ADDRESS, data: CLAIM_SELECTOR, gas: GAS_LIMITS.claimUsdx }],
     });
-    setStatus("USDX claim sent.");
     setStatus("USDX claim sent. Refresh balances after confirmation.");
   } catch (error) {
     setStatus(error?.message || "USDX claim failed.");
@@ -473,7 +479,6 @@ async function wrapNex() {
       method: "eth_sendTransaction",
       params: [{ from: state.account, to: WNEX_ADDRESS, value: hexValue(amount), data: "0xd0e30db0", gas: GAS_LIMITS.wrapNex }],
     });
-    setStatus("Wrap transaction sent.");
     setStatus("Wrap transaction sent. Refresh balances after confirmation.");
   } catch (error) {
     setStatus(error?.message || "Wrap failed.");
@@ -501,9 +506,9 @@ async function executeSwap() {
       setStatus("Enter a valid swap amount.");
       return;
     }
-    setSwapButtonState("Approve token", "pending");
+    setSwapButtonState("Approve exact amount", "pending");
     await approveToken(tokenIn, amountIn);
-    setSwapButtonState("Confirm swap", "pending");
+    setSwapButtonState("Review swap tx", "pending");
     await state.provider.request({
       method: "eth_sendTransaction",
       params: [{ from: state.account, to: ROUTER_ADDRESS, data: swapData(amountIn, minOut, tokenIn, tokenOut), gas: GAS_LIMITS.swap }],
@@ -532,11 +537,11 @@ async function addLiquidity() {
     return;
   }
   try {
-    setStatus(`Approve ${tokenA}`);
+    setStatus(`Approve exact ${tokenA} amount`);
     await approveToken(tokens[tokenA].address, amountA);
-    setStatus(`Approve ${tokenB}`);
+    setStatus(`Approve exact ${tokenB} amount`);
     await approveToken(tokens[tokenB].address, amountB);
-    setStatus("Confirm add liquidity");
+    setStatus("Review add liquidity tx");
     await state.provider.request({
       method: "eth_sendTransaction",
       params: [{
